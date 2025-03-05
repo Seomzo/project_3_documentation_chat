@@ -8,6 +8,8 @@ from crawl4ai import (
     LLMExtractionStrategy,
 )
 
+
+
 def get_browser_config() -> BrowserConfig:
     return BrowserConfig(
         browser_type="chromium",
@@ -41,10 +43,21 @@ def should_skip_url(url: str) -> bool:
     """
     if url.count("https:") > 1:
         return True
+    if '#' in url:
+        return True
+    if url.startswith("https://img"):
+        return True
     for ext in [".png", ".jpg", ".jpeg", ".svg", ".gif"]:
         if url.lower().endswith(ext):
             return True
     return False
+def belongs_to_base(url: str, base_url: str) -> bool:
+    """
+    Returns True if the given URL has the same scheme and netloc as the base_url.
+    """
+    parsed_base = urlparse(base_url)
+    parsed_url = urlparse(url)
+    return parsed_url.scheme == parsed_base.scheme and parsed_url.netloc == parsed_base.netloc
 
 def remove_sidebar(markdown_text: str) -> str:
     """
@@ -77,6 +90,7 @@ async def main():
                 if should_skip_url(normalized_url):
                     continue
                 urls_extracted.append(normalized_url)
+        urls_extracted = list(dict.fromkeys(urls_extracted))
         print("Extracted URLs from base page:")
         for url in urls_extracted:
             print(" -", url)
@@ -103,6 +117,8 @@ async def main():
             for sublink in page_sublinks:
                 if sublink.startswith("https://"):
                     normalized_sublink = clean_extracted_url(sublink, base_url)
+                    if not belongs_to_base(normalized_sublink, base_url):
+                        continue
                     if should_skip_url(normalized_sublink):
                         continue
                     sublinks_extracted.append(normalized_sublink)
@@ -110,8 +126,9 @@ async def main():
     # Deduplicate sublinks.
     sublinks_extracted = list(set(sublinks_extracted))
     print("\nExtracted Sublinks from Stage 2:")
-    for link in sublinks_extracted:
-        print(" -", link)
+    # for link in sublinks_extracted:
+    #     print(" -", link)
+    print(f"\nTotal valid markdown pages collected: {len(sublinks_extracted)}")
     
     # Stage 3: Crawl the sublinks concurrently.
     async with AsyncWebCrawler(config=browser_conf) as crawler:
@@ -123,15 +140,15 @@ async def main():
                 continue
             cleaned_markdown = remove_sidebar(res.markdown)
             if cleaned_markdown.strip().startswith("# Page Not Found"):
-                print("Skipped subpage (Page Not Found):", res.url, "\n")
+                # print("Skipped subpage (Page Not Found):", res.url, "\n")
                 continue
             # Append valid subpage markdown.
             all_cleaned_markdown.append(cleaned_markdown)
             print("Crawled Sublink URL:", res.url)
-            print("Markdown snippet:", cleaned_markdown[:3000], "\n")
+            print("Markdown snippet:", cleaned_markdown[:1000], "\n")
     
     print(f"\nTotal valid markdown pages collected: {len(all_cleaned_markdown)}")
     # Proceed to your embedding step using all_cleaned_markdown.
-
+    # print(cleaned_markdown)
 if __name__ == "__main__":
     asyncio.run(main())
