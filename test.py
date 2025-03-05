@@ -71,7 +71,7 @@ def remove_sidebar(markdown_text: str) -> str:
     return markdown_text
 
 async def main():
-    base_url = "https://python.langchain.com/docs/introduction/"
+    base_url = "https://ai.pydantic.dev/"
     browser_conf = get_browser_config()
     
     # Local accumulators.
@@ -84,6 +84,8 @@ async def main():
         result = await crawler.arun(url=base_url)
         markdown = result.markdown
         raw_urls = re.findall(r'\((https?://[^\)]+)\)', markdown)
+        print(markdown)
+
         for url in raw_urls:
             if url.startswith("https://"):
                 normalized_url = clean_extracted_url(url, base_url)
@@ -104,13 +106,14 @@ async def main():
                 print("No markdown content available for:", res.url, "\n")
                 continue
             cleaned_markdown = remove_sidebar(res.markdown)
-            if cleaned_markdown.strip().startswith("# Page Not Found"):
-                print("Skipped page (Page Not Found):", res.url, "\n")
+            if cleaned_markdown.strip().lower().startswith("# page not found") or \
+                cleaned_markdown.strip().lower().startswith("# 404"):
+                print("Skipped page (404/Not Found):", res.url, "\n")
                 continue
             # Append valid markdown.
             all_cleaned_markdown.append(cleaned_markdown)
             print("Crawled URL:", res.url)
-            print("Markdown snippet:", cleaned_markdown[:3000], "\n")
+            print("Markdown snippet:", cleaned_markdown[:100], "\n")
             
             # Extract sublinks from the valid page.
             page_sublinks = re.findall(r'\((https?://[^\)]+)\)', cleaned_markdown)
@@ -139,8 +142,9 @@ async def main():
                 print("No markdown content available for:", res.url, "\n")
                 continue
             cleaned_markdown = remove_sidebar(res.markdown)
-            if cleaned_markdown.strip().startswith("# Page Not Found"):
-                # print("Skipped subpage (Page Not Found):", res.url, "\n")
+            if cleaned_markdown.strip().lower().startswith("# page not found") or \
+                cleaned_markdown.strip().lower().startswith("# 404"):
+                print("Skipped page (404/Not Found):", res.url, "\n")
                 continue
             # Append valid subpage markdown.
             all_cleaned_markdown.append(cleaned_markdown)
