@@ -67,6 +67,7 @@ def __getCosignSimlarity(in_vector_1, in_vector_2):
     return cosine_similarity_score[0][0]
 
 
+
 # def visualizeEmbeedingCosignSimilarityScores(in_df):
 """
         Calculates the cosign simlarity value for two vectors
