@@ -39,7 +39,7 @@ async def main():
     retriever = vectorstore.as_retriever()
     
     # Initialize your LLM (here using GPT-4 model via OpenAI).
-    llm = ChatOpenAI(model_name="gpt-4o", openai_api_key=openai_api_key)
+    llm = ChatOpenAI(model_name="gpt-4o-mini", openai_api_key=openai_api_key)
     
     # Create a Retrieval-Augmented Generation (RAG) chain.
     rag_chain = RetrievalQA.from_llm(llm=llm, retriever=retriever)

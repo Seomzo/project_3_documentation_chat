@@ -19,7 +19,7 @@ from scraper import get_all_cleaned_markdown
 # Load environment variables from file
 @st.cache_resource
 def load_api_key():
-    load_dotenv('apikey.env')  # change to example.env if you are using the example file
+    load_dotenv('example.env')  # change to example.env if you are using the example file
     return os.getenv("open_ai_api_key")
 
 # Configure page
@@ -48,15 +48,47 @@ if "scraped_url" not in st.session_state:
 if "scraping_complete" not in st.session_state:
     st.session_state.scraping_complete = False
 
+if "api_key" not in st.session_state:
+    st.session_state.api_key = None
+
+# API Key input in sidebar
+with st.sidebar:
+    st.header("API Configuration")
+    
+    # Default to environment API key if available
+    default_api_key = load_api_key() or ""
+    
+    # Input for API key
+    api_key_input = st.text_input(
+        "Enter your OpenAI API Key:",
+        type="password",
+        placeholder="sk-...",
+        help="Your OpenAI API key starting with 'sk-'. This will be used for the chat functionality.",
+        value=default_api_key
+    )
+    
+    # Save API key to session state when entered
+    if api_key_input:
+        st.session_state.api_key = api_key_input
+        if st.button("Update API Key"):
+            st.success("API Key updated! ✅")
+    
+    st.markdown("---")
+    st.caption("This application uses OpenAI's models to process and respond to your queries. Your API key is required to use this functionality.")
+
 # URL input form
 with st.form("url_form", clear_on_submit=False):
     url_input = st.text_input("Enter URL to scrape:", placeholder="https://example.com")
     submit_button = st.form_submit_button("Start Scraping")
 
     if submit_button and url_input:
-        st.session_state.scraped_url = url_input
-        st.session_state.scraping_complete = False
-        st.session_state.messages = []
+        # Check if API key is provided
+        if not st.session_state.api_key:
+            st.error("Please enter your OpenAI API key in the sidebar before proceeding.")
+        else:
+            st.session_state.scraped_url = url_input
+            st.session_state.scraping_complete = False
+            st.session_state.messages = []
 
 # Function to scrape and create chatbot
 async def scrape_and_create_bot(url):
@@ -86,12 +118,11 @@ async def scrape_and_create_bot(url):
         retriever = vectorstore.as_retriever(search_kwargs={"k": 5})
         st.session_state.retriever = retriever
         
-        # Initialize ChatOpenAI (LLM)
-        openai_api_key = load_api_key()
+        # Initialize ChatOpenAI (LLM) with user's API key
         llm = ChatOpenAI(
             temperature=0.2, 
             model_name="gpt-4o", 
-            openai_api_key=openai_api_key
+            openai_api_key=st.session_state.api_key
         )
         
         # Set up memory for conversation
@@ -113,8 +144,8 @@ async def scrape_and_create_bot(url):
         
     return True
 
-# When URL is submitted, run the scraping process
-if st.session_state.scraped_url and not st.session_state.scraping_complete:
+# When URL is submitted and API key is provided, run the scraping process
+if st.session_state.scraped_url and not st.session_state.scraping_complete and st.session_state.api_key:
     asyncio.run(scrape_and_create_bot(st.session_state.scraped_url))
 
 # Display chat interface once scraping is complete
