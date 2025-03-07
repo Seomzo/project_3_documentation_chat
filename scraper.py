@@ -22,7 +22,7 @@ def clean_extracted_url(raw_url: str, base_url: str) -> str:
     Clean out unwanted characters and, if the URL is on the same domain as the base,
     remove the duplicate base path.
     """
-    cleaned = raw_url.replace("/</", "/").replace("<", "").replace(">", "")
+    cleaned = raw_url.replace("/</", "/").replace("<", "").replace(">", "").replace("./", "")
     parsed_base = urlparse(base_url)
     parsed_raw = urlparse(cleaned)
     if parsed_base.netloc == parsed_raw.netloc:
@@ -35,6 +35,27 @@ def clean_extracted_url(raw_url: str, base_url: str) -> str:
             cleaned = urlunparse((parsed_base.scheme, parsed_base.netloc, new_path,
                                   parsed_raw.params, parsed_raw.query, parsed_raw.fragment))
     return cleaned
+
+def remove_duplicate_common_prefix(url: str, base_url: str) -> str:
+    parsed_base = urlparse(base_url)
+    parsed_url = urlparse(url)
+    base_segs = [seg for seg in parsed_base.path.split("/") if seg]
+    url_segs = [seg for seg in parsed_url.path.split("/") if seg]
+    # Compute common prefix between base_segs and url_segs.
+    common_prefix = []
+    for bs, us in zip(base_segs, url_segs):
+        if bs == us:
+            common_prefix.append(bs)
+        else:
+            break
+    n = len(common_prefix)
+    # If the URL's path starts with the common prefix twice, remove one copy.
+    if n > 0 and len(url_segs) >= 2*n and url_segs[:n] == url_segs[n:2*n]:
+        new_segs = url_segs[:n] + url_segs[2*n:]
+        new_path = "/" + "/".join(new_segs)
+        return urlunparse((parsed_url.scheme, parsed_url.netloc, new_path,
+                           parsed_url.params, parsed_url.query, parsed_url.fragment))
+    return url
 
 def should_skip_url(url: str) -> bool:
     """
@@ -51,6 +72,7 @@ def should_skip_url(url: str) -> bool:
         if url.lower().endswith(ext):
             return True
     return False
+
 def belongs_to_base(url: str, base_url: str) -> bool:
     """
     Returns True if the given URL has the same scheme and netloc as the base_url.
@@ -70,8 +92,10 @@ def remove_sidebar(markdown_text: str) -> str:
         return "# " + parts[1]
     return markdown_text
 
-async def main():
-    base_url = "https://ai.pydantic.dev/"
+async def get_all_cleaned_markdown():
+    # Input URL.
+    inputurl = input("Enter the URL to crawl: ")
+    base_url = inputurl
     browser_conf = get_browser_config()
     
     # Local accumulators.
@@ -89,6 +113,8 @@ async def main():
         for url in raw_urls:
             if url.startswith("https://"):
                 normalized_url = clean_extracted_url(url, base_url)
+                normalized_url = remove_duplicate_common_prefix(normalized_url, base_url)
+
                 if should_skip_url(normalized_url):
                     continue
                 urls_extracted.append(normalized_url)
@@ -99,7 +125,7 @@ async def main():
     
     # Stage 2: Crawl the extracted URLs concurrently.
     async with AsyncWebCrawler(config=browser_conf) as crawler:
-        results = await crawler.arun_many(urls=urls_extracted)
+        results = await crawler.arun_many(urls=urls_extracted,verbose=True)
         print("\nStage 2 Results:")
         for res in results:
             if not res.markdown:
@@ -153,6 +179,7 @@ async def main():
     
     print(f"\nTotal valid markdown pages collected: {len(all_cleaned_markdown)}")
     # Proceed to your embedding step using all_cleaned_markdown.
-    # print(cleaned_markdown)
+    return all_cleaned_markdown
 if __name__ == "__main__":
-    asyncio.run(main())
+    cleaned_pages = asyncio.run(get_all_cleaned_markdown())
+    print(f'Collected {len(cleaned_pages)} markdown pages.')
