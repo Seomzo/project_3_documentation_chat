@@ -3,7 +3,7 @@ import asyncio
 from dotenv import load_dotenv
 
 # Load environment variables from file.
-load_dotenv('apikey.env')
+load_dotenv('apikey.env') # change to example.env if you are using the example file.
 openai_api_key = os.getenv("open_ai_api_key")
 
 # Import LangChain modules.

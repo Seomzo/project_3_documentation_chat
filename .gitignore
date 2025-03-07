@@ -1,1 +1,4 @@
-*.env
+apikey.env
+
+__pycache__/
+*.pyc
