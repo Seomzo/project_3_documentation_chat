@@ -8,3 +8,5 @@ openai
 sentence-transformers
 chromadb
 langchain-community
+streamlit
+langchain

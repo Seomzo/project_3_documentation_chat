@@ -92,9 +92,10 @@ def remove_sidebar(markdown_text: str) -> str:
         return "# " + parts[1]
     return markdown_text
 
-async def get_all_cleaned_markdown():
+async def get_all_cleaned_markdown(inputurl=None):
     # Input URL.
-    inputurl = input("Enter the URL to crawl: ")
+    if inputurl is None:
+        inputurl = input("Enter the URL to crawl: ")
     base_url = inputurl
     browser_conf = get_browser_config()
     
