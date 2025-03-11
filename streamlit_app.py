@@ -4,15 +4,22 @@ import time
 import sys
 import subprocess
 
-# Playwright setup for Streamlit Cloud
+# Configure page first - this must be the first st command
+st.set_page_config(
+    page_title="Document Chat Bot",
+    page_icon="🤖",
+    layout="wide"
+)
+
+# Playwright setup for Streamlit Cloud - now after page config
 try:
     # Check if running in Streamlit Cloud
     if os.environ.get('STREAMLIT_SHARING', '') or os.path.exists('/home/appuser'):
-        st.toast("Checking Playwright installation...")
+        st.toast("Installing Playwright Firefox for Streamlit Cloud...")
         # Run in a subprocess to avoid blocking the main thread
-        subprocess.run([sys.executable, "-m", "playwright", "install", "--with-deps", "chromium"], 
-                       check=True, capture_output=True)
-        st.toast("Playwright browsers installed successfully.")
+        subprocess.run([sys.executable, "-m", "playwright", "install", "--with-deps", "firefox"], 
+                      check=True, capture_output=True)
+        st.toast("Playwright Firefox installed successfully.")
 except Exception as e:
     st.warning(f"⚠️ Playwright browser installation failed. Scraping might not work. Error: {str(e)}")
 
@@ -36,13 +43,6 @@ from chat_manager import (
     reset_chat_only,
     reset_everything,
     display_chat_interface
-)
-
-# Configure page
-st.set_page_config(
-    page_title="Document Chat Bot",
-    page_icon="🤖",
-    layout="wide"
 )
 
 st.title("🤖 Document Chatbot")

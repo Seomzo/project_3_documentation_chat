@@ -3,6 +3,7 @@ import asyncio
 import tempfile
 from dotenv import load_dotenv
 import warnings
+import sys
 
 # Import LangChain modules
 from langchain_huggingface import HuggingFaceEmbeddings
@@ -51,18 +52,62 @@ def run_async_scraper(url, max_pages, status_callback=None, stop_callback=None):
     asyncio.set_event_loop(loop)
     
     try:
+        # Check if we're in Streamlit Cloud environment
+        is_streamlit_cloud = os.environ.get('STREAMLIT_SHARING', '') or os.path.exists('/home/appuser')
+        
+        if is_streamlit_cloud and status_callback:
+            status_callback("Running in Streamlit Cloud environment with special handling...")
+        
         # Run the async function in the new loop
         with warnings.catch_warnings():
             warnings.simplefilter("ignore")
-            result = loop.run_until_complete(
-                get_all_cleaned_markdown(
-                    inputurl=url,
-                    max_pages=max_pages,
-                    status_callback=status_callback,
-                    stop_callback=stop_callback
+            try:
+                result = loop.run_until_complete(
+                    get_all_cleaned_markdown(
+                        inputurl=url,
+                        max_pages=max_pages,
+                        status_callback=status_callback,
+                        stop_callback=stop_callback
+                    )
                 )
-            )
-        return result
+                return result
+            except Exception as e:
+                if "Executable doesn't exist" in str(e) and is_streamlit_cloud:
+                    # Specific handling for browser executable issues in Streamlit Cloud
+                    if status_callback:
+                        status_callback(f"Browser executable issue in Streamlit Cloud: {str(e)}")
+                    
+                    # Try again with a more restrictive setup
+                    if status_callback:
+                        status_callback("Attempting to install browser again with alternative approach...")
+                    
+                    # Install Firefox using a different approach
+                    try:
+                        import subprocess
+                        subprocess.run(["apt-get", "update", "-y"], check=False)
+                        subprocess.run(["apt-get", "install", "-y", "firefox-esr"], check=False)
+                        subprocess.run([sys.executable, "-m", "playwright", "install", "--with-deps", "firefox"], check=False)
+                        
+                        if status_callback:
+                            status_callback("Browser reinstalled, retrying scraping...")
+                        
+                        # Try again with the new installation
+                        result = loop.run_until_complete(
+                            get_all_cleaned_markdown(
+                                inputurl=url,
+                                max_pages=max_pages,
+                                status_callback=status_callback,
+                                stop_callback=stop_callback
+                            )
+                        )
+                        return result
+                    except Exception as inner_e:
+                        if status_callback:
+                            status_callback(f"Failed retry: {str(inner_e)}")
+                        raise inner_e
+                else:
+                    # For other exceptions, just re-raise
+                    raise e
     finally:
         # Close the loop
         loop.close()

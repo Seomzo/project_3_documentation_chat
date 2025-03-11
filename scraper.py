@@ -12,11 +12,37 @@ import time
 from bs4 import BeautifulSoup
 
 def get_browser_config() -> BrowserConfig:
-    return BrowserConfig(
-        browser_type="chromium",
-        headless=True,
-        verbose=False,
-    )
+    """
+    Get the browser configuration for the crawler.
+    Attempts to use Chromium but falls back to Firefox if Chromium is unavailable.
+    """
+    try:
+        # Check if we're in Streamlit Cloud environment
+        is_streamlit_cloud = os.environ.get('STREAMLIT_SHARING', '') or os.path.exists('/home/appuser')
+        
+        if is_streamlit_cloud:
+            # For Streamlit Cloud, prefer Firefox which might have better compatibility
+            return BrowserConfig(
+                browser_type="firefox",
+                headless=True,
+                verbose=False,
+                slow_mo=100,  # Add slight delay for stability
+            )
+        else:
+            # Default to Chromium for local environments
+            return BrowserConfig(
+                browser_type="chromium",
+                headless=True,
+                verbose=False,
+            )
+    except Exception:
+        # Fallback to Firefox if there's any issue
+        return BrowserConfig(
+            browser_type="firefox",
+            headless=True,
+            verbose=False,
+            slow_mo=100,  # Add slight delay for stability
+        )
 
 def normalize_url_path(url_path: str) -> str:
     """
@@ -484,7 +510,8 @@ async def get_all_cleaned_markdown(inputurl=None, max_pages: int = 250,
                 status_callback("Installing Playwright browsers for Streamlit Cloud...")
                 
             # Use sys.executable to ensure we're using the correct Python interpreter
-            install_cmd = [sys.executable, "-m", "playwright", "install", "--with-deps", "chromium"]
+            # Try firefox instead of chromium for Streamlit Cloud
+            install_cmd = [sys.executable, "-m", "playwright", "install", "--with-deps", "firefox"]
             result = subprocess.run(install_cmd, capture_output=True, text=True)
             
             if result.returncode != 0:
@@ -494,7 +521,7 @@ async def get_all_cleaned_markdown(inputurl=None, max_pages: int = 250,
                 print(error_msg)
             else:
                 if status_callback:
-                    status_callback("Playwright browsers installed successfully")
+                    status_callback("Playwright Firefox browser installed successfully")
         else:
             # For local environment, use the simpler command
             subprocess.run(['playwright', 'install', 'chromium'], check=True)
