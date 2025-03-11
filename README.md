@@ -1,66 +1,175 @@
 # Documentation Chat Bot
 
-A Streamlit-based web application that allows you to scrape websites, process the content, and have conversations about the scraped data using OpenAI's language models.
+A powerful Streamlit-based chat application that lets you scrape any documentation website and have interactive conversations about its content. The application uses advanced web scraping, natural language processing, and retrieval-augmented generation to provide accurate answers from documentation.
+
+## Table of Contents
+- [Overview](#overview)
+- [Features](#features)
+- [Technology Stack](#technology-stack)
+- [How It Works](#how-it-works)
+- [File Structure](#file-structure)
+- [Installation](#installation)
+- [Usage Guide](#usage-guide)
+- [Advanced Features](#advanced-features)
+- [Troubleshooting](#troubleshooting)
+- [Contributors](#contributors)
+
+## Overview
+
+Documentation Chat Bot transforms technical documentation into an interactive knowledge base. Simply provide the URL of any documentation website, and the application will scrape its content, process it, and create a specialized chatbot that can answer your specific questions about that documentation.
 
 ## Features
 
-- Web scraping of URLs and subpages
-- Conversion of web content to markdown format
-- Text embedding using Hugging Face's sentence transformers
-- Conversational interface powered by OpenAI's GPT models
-- Streamlit web interface for easy interaction
+- **Intelligent Web Scraping**: Automatically crawls documentation websites, including subpages
+- **Multi-stage Crawling**: Uses sitemaps and follows links to maximize content coverage
+- **Markdown Processing**: Converts web content to clean, structured markdown format
+- **Vector Embeddings**: Creates searchable vector representations of content
+- **RAG Architecture**: Uses retrieval-augmented generation for accurate responses
+- **Interactive Chat**: Clean, user-friendly chat interface
+- **Multiple Document Sources**: Ability to add multiple documentation sources to the same chatbot
+- **Configurable Parameters**: Adjust scraping depth, model selection, and more
+- **API Key Management**: Use your own OpenAI API key
+- **Chat Management**: Reset chats while preserving knowledge base
 
-## Setup Instructions
+## Technology Stack
 
-1. Clone this repository
-2. Install the required dependencies:
+The application leverages several powerful technologies:
+
+- **crawl4ai**: Advanced web crawling and scraping for documentation sites
+- **LangChain**: Framework for building context-aware AI applications
+- **Chroma DB**: Vector database for storing and retrieving document embeddings
+- **HuggingFace**: Sentence transformer models for text embeddings
+- **OpenAI**: GPT models for natural language understanding and generation
+- **Streamlit**: Web application framework for the user interface
+- **BeautifulSoup**: HTML parsing for extracting links and content
+- **asyncio**: Asynchronous programming for efficient web scraping
+
+## How It Works
+
+The application follows a sophisticated pipeline:
+
+1. **Web Scraping Phase**:
+   - First attempts to find and process a sitemap.xml for comprehensive URL discovery
+   - Falls back to direct page crawling if no sitemap is available
+   - Uses a three-stage crawling approach to maximize content coverage
+   - Employs BeautifulSoup and regex patterns to extract and clean links
+
+2. **Content Processing**:
+   - Converts HTML to clean markdown format
+   - Removes navigation elements and standardizes formatting
+   - Creates document objects from the processed content
+
+3. **Vector Database Creation**:
+   - Generates embeddings for each document using HuggingFace models
+   - Stores embeddings in a Chroma vector database
+   - Creates an efficient retrieval system for finding relevant content
+
+4. **Chat Interface**:
+   - Presents a clean Streamlit chat interface
+   - Handles user queries and manages conversation state
+   - Provides status updates during scraping and processing
+
+5. **Question Answering**:
+   - Uses a retrieval-augmented generation (RAG) approach
+   - Retrieves the most relevant documents for each question
+   - Passes retrieved context to the LLM for accurate responses
+
+## File Structure
+
+The main folder contains the following key files:
+
+- **streamlit_app.py**: The main Streamlit application that provides the user interface, manages the scraping process, and coordinates the chat functionality.
+
+- **app.py**: Core application logic including vector store creation, document processing, and LLM chain setup. Handles the bridge between scraping and chat functionality.
+
+- **chat_manager.py**: Manages the chat state, conversation chain, and interaction flow. Handles resetting chats, formatting responses, and maintaining chat history.
+
+- **scraper.py**: Contains all the web scraping functionality, including multi-stage crawling logic, URL extraction, content cleaning, and markdown conversion.
+
+- **example.env**: Template for environment variables, primarily for storing the OpenAI API key.
+
+## Installation
+
+Follow these steps to install and run the application locally:
+
+1. **Clone the repository**:
+   ```bash
+   git clone https://github.com/yourusername/documentation-chat-bot.git
+   cd documentation-chat-bot
    ```
+
+2. **Install the required dependencies**:
+   ```bash
    pip install -r requirements.txt
    ```
-3. Create an `apikey.env` file with your OpenAI API key:
+
+3. **Navigate to the main directory**:
+   ```bash
+   cd main
    ```
-   open_ai_api_key=your_openai_api_key_here
-   ```
-4. Run the Streamlit app:
-   ```
+
+4. **Run the Streamlit application**:
+   ```bash
    streamlit run streamlit_app.py
    ```
 
-## Usage
+**Note**: You don't need to edit the example.env file. You can enter your OpenAI API key directly in the Streamlit interface.
 
-1. Enter a URL you want to scrape in the input field
-2. Click "Start Scraping" to begin the scraping process
-3. Wait for the scraping and embedding process to complete
-4. Once ready, you can start asking questions about the content
-5. The chat history will be maintained during your session
+## Usage Guide
 
-## Files
+1. **Start the application**:
+   ```bash
+   cd main
+   streamlit run streamlit_app.py
+   ```
 
-- `streamlit_app.py`: Main Streamlit application for the UI
-- `app.py`: Handles LLM and embedding operations 
-- `chat_manager.py`: Manages chat state and interface
-- `scraper.py`: Contains web scraping functionality
-- `requirements.txt`: Required dependencies
+2. **Enter your OpenAI API key** in the sidebar.
 
-## Deployment on Streamlit Cloud
+3. **Input a documentation URL** in the main interface (e.g., "https://python.langchain.com/docs/").
 
-To deploy this application on Streamlit Cloud:
+4. **Click "Start Scraping"** and wait for the process to complete. The application will display progress updates.
 
-1. Fork or push this repository to your GitHub account
-2. Sign in to [Streamlit Cloud](https://streamlit.io/cloud)
-3. Create a new app and select your repository
-4. Set the main file path to `streamlit_app.py`
-5. In the app's settings, add your OpenAI API key as a secret:
-   - Go to "Advanced settings" > "Secrets"
-   - Add the following in the secrets field:
-     ```
-     [openai]
-     OPENAI_API_KEY=your_actual_api_key_here
-     ```
-6. Deploy the app
+5. **Once scraping is complete**, you can start asking questions about the documentation.
 
-## Notes
+6. **Add additional documentation sources** via the sidebar if needed.
 
-- The scraper can handle multiple subpages, but it may take some time for large websites
-- Embedding and indexing also takes time based on the amount of content
-- The application uses a RAG (Retrieval Augmented Generation) approach for answering questions
+7. **Reset chat or reset everything** using the buttons in the sidebar if you want to start fresh.
+
+## Advanced Features
+
+### Model Selection
+Choose different OpenAI models from the dropdown in the sidebar to balance between performance and cost:
+- GPT-4o: Most capable model
+- GPT-4o Mini: Good balance of performance and speed
+- GPT-4.5: Latest GPT-4 generation 
+- o1/o3: Specialized models for certain tasks
+
+### Scraping Settings
+Adjust the maximum number of pages to scrape using the slider in the sidebar. Higher values will scrape more content but take longer.
+
+### Adding Additional Documents
+After the initial scraping is complete, you can add content from additional URLs to enhance your chatbot's knowledge.
+
+### Chat Management
+- **Reset Chat Only**: Clears the chat history while preserving the document knowledge base
+- **Reset Everything**: Complete reset to start with a new documentation source
+
+## Troubleshooting
+
+- **Scraping fails**: Try a different URL or reduce the maximum page count
+- **No content found**: Ensure the URL points to a documentation site with accessible content
+- **Slow performance**: Reduce the maximum page count or try a simpler documentation site
+- **API key errors**: Verify your OpenAI API key is correct and has sufficient credits
+- **Import errors**: Ensure you're running the application from the main directory
+
+## Contributors
+
+- Omar Alsadoon
+- Mei Kam
+- Tamara Freeman
+- Milen King
+- Yiannis Pagkalos
+
+---
+
+*This project uses OpenAI's models to process and respond to your queries. Your API key is required to use this functionality.*
