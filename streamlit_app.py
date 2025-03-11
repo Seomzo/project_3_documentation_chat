@@ -2,7 +2,26 @@ import streamlit as st
 import os
 import time
 import sys
-import subprocess
+import requests
+from bs4 import BeautifulSoup
+from urllib.parse import urlparse, urljoin
+import asyncio
+import tempfile
+import nest_asyncio
+from dotenv import load_dotenv
+import warnings
+
+# Import LangChain modules
+from langchain_huggingface import HuggingFaceEmbeddings
+from langchain_community.vectorstores import Chroma
+from langchain_openai import ChatOpenAI
+from langchain.docstore.document import Document
+from langchain_core.prompts import ChatPromptTemplate
+from langchain_core.runnables import RunnablePassthrough
+from langchain_core.output_parsers import StrOutputParser
+
+# Fix asyncio issues in Streamlit
+nest_asyncio.apply()
 
 # Configure page first - this must be the first st command
 st.set_page_config(
@@ -20,18 +39,248 @@ try:
 except Exception as e:
     st.warning(f"Error during environment setup: {str(e)}")
 
-# Import core functionality
-from app import (
-    load_api_key,
-    run_async_scraper,
-    create_vectorstore,
-    get_retriever,
-    create_conversation_chain,
-    process_scraped_content,
-    add_documents_to_vectorstore
-)
+# Directly define the functions from app.py that we need
+def load_api_key():
+    """Load and return the OpenAI API key from environment variables."""
+    # Check for Streamlit secrets (used in Streamlit Cloud)
+    try:
+        if hasattr(st, 'secrets') and 'openai' in st.secrets and 'api_key' in st.secrets['openai']:
+            return st.secrets['openai']['api_key']
+    except:
+        pass
+    
+    # Try loading from various possible .env files
+    for env_file in ['apikey.env', 'example.env', '.env']:
+        try:
+            if os.path.exists(env_file):
+                load_dotenv(env_file)
+                break
+        except:
+            pass
+    
+    # Check various possible environment variable names for the API key
+    for env_var in ["open_ai_api_key", "OPENAI_API_KEY", "OPENAI_KEY"]:
+        api_key = os.getenv(env_var)
+        if api_key and api_key != "sk-your-api-key-here":
+            return api_key
+    
+    # If no valid API key is found, return None
+    return None
 
-# Import chat functionality
+async def fallback_scrape_without_browser(url, status_callback=None):
+    """
+    A fallback method to scrape content without using a browser.
+    This is less effective but works when browser automation isn't available.
+    """
+    try:
+        from urllib.parse import urljoin, urlparse
+        
+        if status_callback:
+            status_callback(f"Using fallback scraping method for {url}")
+        
+        # Parse the base URL
+        parsed_url = urlparse(url)
+        base_domain = f"{parsed_url.scheme}://{parsed_url.netloc}"
+        
+        # Make the request
+        headers = {
+            'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+        }
+        response = requests.get(url, headers=headers)
+        soup = BeautifulSoup(response.text, 'html.parser')
+        
+        # Extract text and create markdown
+        title = soup.title.string if soup.title else "No Title"
+        main_content = soup.find('main') or soup.find('article') or soup.find('body')
+        
+        # Extract clean text
+        if main_content:
+            # Remove script and style elements
+            for script in main_content.find_all(['script', 'style']):
+                script.decompose()
+                
+            text = main_content.get_text(separator='\n\n')
+        else:
+            text = soup.get_text(separator='\n\n')
+            
+        # Clean up the text
+        lines = [line.strip() for line in text.split('\n') if line.strip()]
+        cleaned_text = '\n\n'.join(lines)
+        
+        # Create markdown
+        markdown = f"# {title}\n\n{cleaned_text}"
+        
+        # Try to extract links for further scraping
+        links = []
+        for a in soup.find_all('a', href=True):
+            href = a['href']
+            if href.startswith('/') or href.startswith(base_domain):
+                full_url = urljoin(base_domain, href)
+                links.append(full_url)
+                
+        if status_callback:
+            status_callback(f"Extracted {len(links)} links and {len(markdown)} characters of content")
+            
+        return markdown, links
+    except Exception as e:
+        if status_callback:
+            status_callback(f"Error in fallback scraping: {str(e)}")
+        return f"# Error scraping {url}\n\nError: {str(e)}", []
+
+async def get_all_cleaned_markdown(inputurl=None, max_pages=100, status_callback=None, stop_callback=None):
+    """
+    Simple browser-free web scraping approach using requests and BeautifulSoup.
+    Works well in Streamlit Cloud where browser automation isn't available.
+    """
+    if inputurl is None:
+        inputurl = input("Enter the URL to crawl: ")
+    
+    if status_callback:
+        status_callback("Using simplified scraping without browser automation")
+    
+    # Collect results without browser
+    all_cleaned_markdown = []
+    visited_urls = set()
+    urls_to_visit = [inputurl]
+    
+    while urls_to_visit and len(all_cleaned_markdown) < max_pages:
+        if stop_callback and stop_callback():
+            if status_callback:
+                status_callback("Scraping stopped by user.")
+            break
+            
+        current_url = urls_to_visit.pop(0)
+        if current_url in visited_urls:
+            continue
+            
+        visited_urls.add(current_url)
+        
+        if status_callback:
+            status_callback(f"Scraping {len(all_cleaned_markdown)+1}/{max_pages}: {current_url}")
+        
+        markdown, links = await fallback_scrape_without_browser(current_url, status_callback)
+        all_cleaned_markdown.append(markdown)
+        
+        # Add new links to visit
+        for link in links:
+            if link not in visited_urls and link not in urls_to_visit:
+                urls_to_visit.append(link)
+        
+        # Limit to max_pages
+        if len(all_cleaned_markdown) >= max_pages:
+            break
+    
+    if status_callback:
+        status_callback(f"Completed scraping with {len(all_cleaned_markdown)} pages")
+        
+    return all_cleaned_markdown
+
+def run_async_scraper(url, max_pages, status_callback=None, stop_callback=None):
+    """Run the async scraper with a new event loop."""
+    # Create a new event loop
+    loop = asyncio.new_event_loop()
+    asyncio.set_event_loop(loop)
+    
+    try:
+        # Run the async function in the new loop
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore")
+            result = loop.run_until_complete(
+                get_all_cleaned_markdown(
+                    inputurl=url,
+                    max_pages=max_pages,
+                    status_callback=status_callback,
+                    stop_callback=stop_callback
+                )
+            )
+        return result
+    finally:
+        # Close the loop
+        loop.close()
+
+def process_scraped_content(all_markdowns):
+    """Process raw markdown content into Document objects."""
+    documents = []
+    for i, markdown in enumerate(all_markdowns):
+        doc = Document(
+            page_content=markdown,
+            metadata={"source": f"document_{i}", "index": i}
+        )
+        documents.append(doc)
+    return documents
+
+def create_vectorstore(documents):
+    """Create a vector store from the documents."""
+    # Create a temporary directory for the vector store
+    persist_directory = tempfile.mkdtemp()
+    
+    # Create the embeddings model
+    embeddings = HuggingFaceEmbeddings(
+        model_name="sentence-transformers/all-MiniLM-L6-v2",
+        model_kwargs={'device': 'cpu'},
+        encode_kwargs={'normalize_embeddings': True}
+    )
+    
+    # Create the vector store
+    vectorstore = Chroma.from_documents(
+        documents=documents,
+        embedding=embeddings,
+        persist_directory=persist_directory,
+        collection_name="docs_collection"
+    )
+    
+    return vectorstore
+
+def get_retriever(vectorstore, k=5):
+    """Get a retriever from the vectorstore with the specified k value."""
+    return vectorstore.as_retriever(
+        search_type="similarity",
+        search_kwargs={"k": k}
+    )
+
+def create_conversation_chain(retriever, api_key, model_name="gpt-4o-mini"):
+    """Create a conversation chain for the chatbot."""
+    # Define the format_docs function
+    def format_docs(docs):
+        if not docs:
+            return "No specific information about this was found in the documentation."
+        return "\n\n".join(doc.page_content for doc in docs)
+    
+    # Create the prompt template
+    template = """You are a helpful assistant for answering questions about the documentation that has been provided to you.
+    Use only the following context to answer the user's question. If you don't know the answer or the information is not in the context, say "I don't have information about that in the documentation, but here's what I know about related topics: [relevant information if available]. Would you like me to help with something else?"
+    
+    Context: {context}
+    
+    Question: {question}
+    
+    Answer:"""
+    
+    prompt = ChatPromptTemplate.from_template(template)
+    
+    # Initialize the LLM
+    llm = ChatOpenAI(
+        model_name=model_name, 
+        openai_api_key=api_key,
+        temperature=0.2,
+        streaming=True  # Enable streaming for better UX
+    )
+    
+    # Create the conversation chain
+    conversation = (
+        {"context": retriever | format_docs, "question": RunnablePassthrough()}
+        | prompt
+        | llm
+    )
+    
+    return conversation
+
+def add_documents_to_vectorstore(vectorstore, documents):
+    """Add new documents to an existing vectorstore."""
+    vectorstore.add_documents(documents)
+    return vectorstore
+
+# Import chat functionality (we'll keep this because chat_manager.py doesn't depend on app.py)
 from chat_manager import (
     initialize_chat_state,
     should_stop_scraping,
@@ -46,7 +295,18 @@ st.title("🤖 Document Chatbot")
 st.markdown("Enter a URL to scrape and chat with the content!")
 
 # Initialize session state variables if they don't exist
-initialize_chat_state()
+if "messages" not in st.session_state:
+    st.session_state.messages = []
+if "conversation" not in st.session_state:
+    st.session_state.conversation = None
+if "scraped_url" not in st.session_state:
+    st.session_state.scraped_url = None
+if "scraping_complete" not in st.session_state:
+    st.session_state.scraping_complete = False
+if "scraping_in_progress" not in st.session_state:
+    st.session_state.scraping_in_progress = False
+if "scraping_done" not in st.session_state:
+    st.session_state.scraping_done = False
 if "api_key" not in st.session_state:
     st.session_state.api_key = ""
 if "max_pages" not in st.session_state:
