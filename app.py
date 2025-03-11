@@ -18,7 +18,7 @@ from scraper import get_all_cleaned_markdown
 
 def load_api_key():
     """Load and return the OpenAI API key from environment variables."""
-    load_dotenv('apikey.env')  # change to example.env if using the example file
+    load_dotenv('example.env')  # change to example.env if using the example file
     return os.getenv("open_ai_api_key")
 
 def run_async_scraper(url, max_pages, status_callback=None, stop_callback=None):

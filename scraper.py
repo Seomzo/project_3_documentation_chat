@@ -612,7 +612,7 @@ async def get_all_cleaned_markdown(inputurl=None, max_pages: int = 250,
                             visited_urls.add(cleaned_sublink)
                 
                 # Short delay between batches
-                await asyncio.sleep(1)
+                await asyncio.sleep(0)
 
         # Deduplicate and limit stage 3 URLs
         stage3_urls = list(set(stage3_urls))
@@ -646,7 +646,7 @@ async def get_all_cleaned_markdown(inputurl=None, max_pages: int = 250,
                     all_cleaned_markdown.append(result["markdown"])
                 
                 # Short delay between batches
-                await asyncio.sleep(1)
+                await asyncio.sleep(0)
     
     print(f"\nSuccessfully collected {len(all_cleaned_markdown)} pages")
     if status_callback:

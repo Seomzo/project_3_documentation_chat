@@ -60,7 +60,7 @@ def create_conversation_chain(retriever, api_key, model_name="gpt-4o-mini"):
     llm = ChatOpenAI(
         model_name=model_name, 
         openai_api_key=api_key,
-        temperature=0.2  # Lower temperature for more factual responses
+        temperature=0.3  # Lower temperature for more factual responses
     )
     
     # Create the conversation chain
@@ -86,7 +86,7 @@ def reset_chat_only():
         # Get a retriever from the existing vectorstore
         retriever = vectorstore.as_retriever(
             search_type="similarity",
-            search_kwargs={"k": 5}
+            search_kwargs={"k": 8}
         )
         
         # Create a new conversation chain
