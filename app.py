@@ -21,8 +21,8 @@ def load_api_key():
     # Check for Streamlit secrets (used in Streamlit Cloud)
     try:
         import streamlit as st
-        if hasattr(st, 'secrets') and 'openai' in st.secrets and 'OPENAI_API_KEY' in st.secrets['openai']:
-            return st.secrets['openai']['OPENAI_API_KEY']
+        if hasattr(st, 'secrets') and 'openai' in st.secrets and 'api_key' in st.secrets['openai']:
+            return st.secrets['openai']['api_key']
     except:
         pass
     
@@ -38,9 +38,10 @@ def load_api_key():
     # Check various possible environment variable names for the API key
     for env_var in ["open_ai_api_key", "OPENAI_API_KEY", "OPENAI_KEY"]:
         api_key = os.getenv(env_var)
-        if api_key:
+        if api_key and api_key != "sk-your-api-key-here":
             return api_key
     
+    # If no valid API key is found, return None
     return None
 
 def run_async_scraper(url, max_pages, status_callback=None, stop_callback=None):
@@ -123,7 +124,8 @@ def create_conversation_chain(retriever, api_key, model_name="gpt-4o-mini"):
     llm = ChatOpenAI(
         model_name=model_name, 
         openai_api_key=api_key,
-        temperature=0.2
+        temperature=0.2,
+        streaming=True  # Enable streaming for better UX
     )
     
     # Create the conversation chain
@@ -131,7 +133,6 @@ def create_conversation_chain(retriever, api_key, model_name="gpt-4o-mini"):
         {"context": retriever | format_docs, "question": RunnablePassthrough()}
         | prompt
         | llm
-        | StrOutputParser()
     )
     
     return conversation

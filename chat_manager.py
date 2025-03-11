@@ -60,7 +60,8 @@ def create_conversation_chain(retriever, api_key, model_name="gpt-4o-mini"):
     llm = ChatOpenAI(
         model_name=model_name, 
         openai_api_key=api_key,
-        temperature=0.3  # Lower temperature for more factual responses
+        temperature=0.3,  # Lower temperature for more factual responses
+        streaming=True  # Enable streaming for better UX
     )
     
     # Create the conversation chain
@@ -68,7 +69,6 @@ def create_conversation_chain(retriever, api_key, model_name="gpt-4o-mini"):
         {"context": retriever | format_docs, "question": RunnablePassthrough()}
         | prompt
         | llm
-        | StrOutputParser()
     )
     
     return conversation
@@ -154,14 +154,40 @@ def display_chat_interface():
         with st.chat_message("assistant"):
             with st.spinner("Thinking..."):
                 try:
-                    # Invoke the conversation chain
-                    response = st.session_state.conversation.invoke(prompt)
+                    # Set up container for streaming output
+                    response_placeholder = st.empty()
+                    full_response = ""
                     
-                    # Display the response
-                    st.write(response)
+                    # Define a streaming callback function
+                    def stream_handler(chunk):
+                        nonlocal full_response
+                        # Extract content from the chunk
+                        if hasattr(chunk, "content"):
+                            content = chunk.content
+                        elif isinstance(chunk, dict) and "content" in chunk:
+                            content = chunk["content"]
+                        else:
+                            content = str(chunk)
+                            
+                        if content:
+                            full_response += content
+                            response_placeholder.markdown(full_response)
+                        return chunk
+                    
+                    # Invoke the conversation chain with streaming
+                    response = st.session_state.conversation.invoke(
+                        prompt,
+                        {"callbacks": [stream_handler]}
+                    )
+                    
+                    # Get the complete response text
+                    if hasattr(response, "content"):
+                        complete_response = response.content
+                    else:
+                        complete_response = full_response
                     
                     # Add assistant response to chat history
-                    st.session_state.messages.append({"role": "assistant", "content": response})
+                    st.session_state.messages.append({"role": "assistant", "content": complete_response})
                     
                 except Exception as e:
                     error_msg = f"Error generating response: {str(e)}"

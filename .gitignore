@@ -1,4 +1,4 @@
 apikey.env
 
 __pycache__/
-*.pyc
+*.pyc.streamlit/secrets.toml
