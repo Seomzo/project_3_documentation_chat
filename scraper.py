@@ -473,6 +473,36 @@ async def get_all_cleaned_markdown(inputurl=None, max_pages: int = 250,
     if inputurl is None:
         inputurl = input("Enter the URL to crawl: ")
     
+    # Try to install Playwright browsers if not already installed
+    try:
+        import sys
+        import subprocess
+        
+        # First check if we're in Streamlit Cloud environment
+        if os.environ.get('STREAMLIT_SHARING', '') or os.path.exists('/home/appuser'):
+            if status_callback:
+                status_callback("Installing Playwright browsers for Streamlit Cloud...")
+                
+            # Use sys.executable to ensure we're using the correct Python interpreter
+            install_cmd = [sys.executable, "-m", "playwright", "install", "--with-deps", "chromium"]
+            result = subprocess.run(install_cmd, capture_output=True, text=True)
+            
+            if result.returncode != 0:
+                error_msg = f"Failed to install Playwright browsers: {result.stderr}"
+                if status_callback:
+                    status_callback(error_msg)
+                print(error_msg)
+            else:
+                if status_callback:
+                    status_callback("Playwright browsers installed successfully")
+        else:
+            # For local environment, use the simpler command
+            subprocess.run(['playwright', 'install', 'chromium'], check=True)
+    except Exception as e:
+        print(f"Warning: Failed to automatically install Playwright browsers: {str(e)}")
+        if status_callback:
+            status_callback(f"Warning: Failed to automatically install Playwright browsers: {str(e)}")
+    
     base_url = inputurl
     browser_conf = get_browser_config()
     visited_urls = set()

@@ -1,6 +1,20 @@
 import streamlit as st
 import os
 import time
+import sys
+import subprocess
+
+# Playwright setup for Streamlit Cloud
+try:
+    # Check if running in Streamlit Cloud
+    if os.environ.get('STREAMLIT_SHARING', '') or os.path.exists('/home/appuser'):
+        st.toast("Checking Playwright installation...")
+        # Run in a subprocess to avoid blocking the main thread
+        subprocess.run([sys.executable, "-m", "playwright", "install", "--with-deps", "chromium"], 
+                       check=True, capture_output=True)
+        st.toast("Playwright browsers installed successfully.")
+except Exception as e:
+    st.warning(f"⚠️ Playwright browser installation failed. Scraping might not work. Error: {str(e)}")
 
 # Import core functionality
 from app import (
