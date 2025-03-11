@@ -36,13 +36,31 @@ A Streamlit-based web application that allows you to scrape websites, process th
 
 ## Files
 
-- `streamlit_app.py`: Main Streamlit application
+- `streamlit_app.py`: Main Streamlit application for the UI
+- `app.py`: Handles LLM and embedding operations 
+- `chat_manager.py`: Manages chat state and interface
 - `scraper.py`: Contains web scraping functionality
-- `app.py`: Original command-line version of the app
 - `requirements.txt`: Required dependencies
+
+## Deployment on Streamlit Cloud
+
+To deploy this application on Streamlit Cloud:
+
+1. Fork or push this repository to your GitHub account
+2. Sign in to [Streamlit Cloud](https://streamlit.io/cloud)
+3. Create a new app and select your repository
+4. Set the main file path to `streamlit_app.py`
+5. In the app's settings, add your OpenAI API key as a secret:
+   - Go to "Advanced settings" > "Secrets"
+   - Add the following in the secrets field:
+     ```
+     [openai]
+     OPENAI_API_KEY=your_actual_api_key_here
+     ```
+6. Deploy the app
 
 ## Notes
 
 - The scraper can handle multiple subpages, but it may take some time for large websites
 - Embedding and indexing also takes time based on the amount of content
-- The application uses ConversationalRetrievalChain to maintain conversation context
+- The application uses a RAG (Retrieval Augmented Generation) approach for answering questions

@@ -18,8 +18,30 @@ from scraper import get_all_cleaned_markdown
 
 def load_api_key():
     """Load and return the OpenAI API key from environment variables."""
-    load_dotenv('example.env')  # change to example.env if using the example file
-    return os.getenv("open_ai_api_key")
+    # Check for Streamlit secrets (used in Streamlit Cloud)
+    try:
+        import streamlit as st
+        if hasattr(st, 'secrets') and 'openai' in st.secrets and 'OPENAI_API_KEY' in st.secrets['openai']:
+            return st.secrets['openai']['OPENAI_API_KEY']
+    except:
+        pass
+    
+    # Try loading from various possible .env files
+    for env_file in ['apikey.env', 'example.env', '.env']:
+        try:
+            if os.path.exists(env_file):
+                load_dotenv(env_file)
+                break
+        except:
+            pass
+    
+    # Check various possible environment variable names for the API key
+    for env_var in ["open_ai_api_key", "OPENAI_API_KEY", "OPENAI_KEY"]:
+        api_key = os.getenv(env_var)
+        if api_key:
+            return api_key
+    
+    return None
 
 def run_async_scraper(url, max_pages, status_callback=None, stop_callback=None):
     """Run the async scraper with a new event loop."""
