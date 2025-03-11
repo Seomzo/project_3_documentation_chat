@@ -26,7 +26,6 @@ def get_browser_config() -> BrowserConfig:
                 browser_type="firefox",
                 headless=True,
                 verbose=False,
-                slow_mo=100,  # Add slight delay for stability
             )
         else:
             # Default to Chromium for local environments
@@ -41,7 +40,6 @@ def get_browser_config() -> BrowserConfig:
             browser_type="firefox",
             headless=True,
             verbose=False,
-            slow_mo=100,  # Add slight delay for stability
         )
 
 def normalize_url_path(url_path: str) -> str:
@@ -499,29 +497,39 @@ async def get_all_cleaned_markdown(inputurl=None, max_pages: int = 250,
     if inputurl is None:
         inputurl = input("Enter the URL to crawl: ")
     
-    # Try to install Playwright browsers if not already installed
+    # Check if we're in Streamlit Cloud environment
+    is_streamlit_cloud = os.environ.get('STREAMLIT_SHARING', '') or os.path.exists('/home/appuser')
+    use_fallback = False
+    
+    # Try to set up browser-based scraping
     try:
         import sys
         import subprocess
         
         # First check if we're in Streamlit Cloud environment
-        if os.environ.get('STREAMLIT_SHARING', '') or os.path.exists('/home/appuser'):
+        if is_streamlit_cloud:
             if status_callback:
-                status_callback("Installing Playwright browsers for Streamlit Cloud...")
-                
-            # Use sys.executable to ensure we're using the correct Python interpreter
-            # Try firefox instead of chromium for Streamlit Cloud
-            install_cmd = [sys.executable, "-m", "playwright", "install", "--with-deps", "firefox"]
-            result = subprocess.run(install_cmd, capture_output=True, text=True)
+                status_callback("Detected Streamlit Cloud environment. Browser setup may be limited.")
             
-            if result.returncode != 0:
-                error_msg = f"Failed to install Playwright browsers: {result.stderr}"
+            # First try to see if regular scraping works
+            try:
+                # Try with a brief test
                 if status_callback:
-                    status_callback(error_msg)
-                print(error_msg)
-            else:
+                    status_callback("Testing browser availability...")
+                    
+                browser_config = get_browser_config()
+                run_config = CrawlerRunConfig(cache_mode=CacheMode.ENABLED)
+                
+                # Try a very quick crawl just to test if the browser works
+                async with AsyncWebCrawler(config=browser_config) as crawler:
+                    await crawler.arun(url="https://example.com", config=run_config)
+                    
                 if status_callback:
-                    status_callback("Playwright Firefox browser installed successfully")
+                    status_callback("Browser is working, proceeding with normal scraping...")
+            except Exception as e:
+                if status_callback:
+                    status_callback(f"Browser test failed: {str(e)} - Will use fallback method")
+                use_fallback = True
         else:
             # For local environment, use the simpler command
             subprocess.run(['playwright', 'install', 'chromium'], check=True)
@@ -529,186 +537,292 @@ async def get_all_cleaned_markdown(inputurl=None, max_pages: int = 250,
         print(f"Warning: Failed to automatically install Playwright browsers: {str(e)}")
         if status_callback:
             status_callback(f"Warning: Failed to automatically install Playwright browsers: {str(e)}")
+        
+        # Set use_fallback to True if we can't set up the browser
+        use_fallback = True
     
-    base_url = inputurl
-    browser_conf = get_browser_config()
-    visited_urls = set()
-    all_cleaned_markdown = []
-    stage2_urls = []
-    stage3_urls = []
-    
-    # Check if scraping should stop
-    if stop_callback and stop_callback():
-        print("Scraping stopped by user.")
+    # If we're using the fallback method, do simplified scraping
+    if use_fallback:
+        if status_callback:
+            status_callback("Using simplified scraping without browser automation")
+        
+        # Collect results without browser
+        all_cleaned_markdown = []
+        visited_urls = set()
+        urls_to_visit = [inputurl]
+        
+        while urls_to_visit and len(all_cleaned_markdown) < max_pages:
+            if stop_callback and stop_callback():
+                if status_callback:
+                    status_callback("Scraping stopped by user.")
+                break
+                
+            current_url = urls_to_visit.pop(0)
+            if current_url in visited_urls:
+                continue
+                
+            visited_urls.add(current_url)
+            
+            if status_callback:
+                status_callback(f"Fallback scraping {len(all_cleaned_markdown)+1}/{max_pages}: {current_url}")
+            
+            markdown, links = await fallback_scrape_without_browser(current_url, status_callback)
+            all_cleaned_markdown.append(markdown)
+            
+            # Add new links to visit
+            for link in links:
+                if link not in visited_urls and link not in urls_to_visit:
+                    urls_to_visit.append(link)
+            
+            # Limit to max_pages
+            if len(all_cleaned_markdown) >= max_pages:
+                break
+        
+        if status_callback:
+            status_callback(f"Completed fallback scraping with {len(all_cleaned_markdown)} pages")
+            
         return all_cleaned_markdown
-        
-    async with AsyncWebCrawler(config=browser_conf) as crawler:
-        # Stage 1: Try sitemap first, then fall back to base page crawl
-        print(f"\nStarting crawl for: {base_url}")
-        if status_callback:
-            status_callback(f"Stage 1: Sitemap crawl for: {base_url}")
-        
-        # First attempt: Try to get URLs from sitemap
-        sitemap_urls = await extract_urls_from_sitemap(crawler, base_url)
-        
-        if sitemap_urls:
-            print(f"Successfully found {len(sitemap_urls)} URLs from sitemap")
-            if status_callback:
-                status_callback(f"Found {len(sitemap_urls)} URLs from sitemap")
-            
-            # Use these URLs for stage 2
-            for url in sitemap_urls:
-                cleaned_url = url  # We're keeping the original URLs from sitemap
-                if cleaned_url and not should_skip_url(cleaned_url, visited_urls, base_url):
-                    stage2_urls.append(cleaned_url)
-                    visited_urls.add(cleaned_url)
-        else:
-            # Fallback: Crawl the base page if sitemap approach failed
-            print("No sitemap found or sitemap empty. Falling back to standard crawling.")
-            if status_callback:
-                status_callback("No sitemap found. Using standard crawling approach.")
-                
-            try:
-                # Crawl the base URL
-                result = await crawler.arun(url=base_url)
-                if result:
-                    visited_urls.add(base_url)
-                    
-                    # Add the base page content to our collection
-                    if result.markdown:
-                        base_markdown = result.markdown
-                        all_cleaned_markdown.append(remove_sidebar(base_markdown))
-                    
-                    # Try extraction methods in sequence until we get URLs
-                    
-                    # 1. Try markdown extraction
-                    markdown_urls = set(re.findall(r'\((https?://[^\)]+)\)', result.markdown or ""))
-                    
-                    # 2. Try BeautifulSoup HTML parsing
-                    html_urls = set()
-                    if result.html:
-                        html_urls = set(extract_links_from_html(result.html, base_url))
-                    
-                    # 3. Try direct DOM access with JavaScript
-                    js_urls = set()
-                    js_urls = set(await direct_crawl_for_href(crawler, base_url))
-                    
-                    # 4. Try regex as fallback
-                    regex_urls = set()
-                    if result.html and not (markdown_urls or html_urls or js_urls):
-                        regex_urls = set(extract_href_attributes(result.html, base_url))
-                    
-                    # 5. Try common documentation paths as last resort
-                    common_urls = set()
-                    if not (markdown_urls or html_urls or js_urls or regex_urls):
-                        common_urls = set(generate_common_doc_paths(base_url))
-                    
-                    # Combine all found URLs
-                    all_urls = markdown_urls | html_urls | js_urls | regex_urls | common_urls
-                    
-                    # Clean and filter URLs
-                    for url in all_urls:
-                        cleaned_url = clean_extracted_url(url, base_url)
-                        if cleaned_url and not should_skip_url(cleaned_url, visited_urls, base_url):
-                            stage2_urls.append(cleaned_url)
-                            visited_urls.add(cleaned_url)
-            except Exception as e:
-                print(f"Error in base page crawling: {str(e)}")
-                if status_callback:
-                    status_callback(f"Error in base page crawling: {str(e)}")
-                
-                # If standard crawling failed, try common documentation paths
-                print("Base page crawling failed. Trying common documentation paths...")
-                common_urls = generate_common_doc_paths(base_url)
-                stage2_urls.extend(common_urls)
-        
-        # Deduplicate URLs
-        stage2_urls = list(set(stage2_urls))
-        
-        # Limit number of pages for stage 2
-        stage2_limit = min(len(stage2_urls), max_pages // 2)
-        stage2_urls = stage2_urls[:stage2_limit]
-        print(f"Found {len(stage2_urls)} URLs to crawl in Stage 2")
-        if status_callback:
-            status_callback(f"Found {len(stage2_urls)} URLs to crawl in Stage 2")
-        
-        # Stage 2: Continue with the crawling as before
-        if stage2_urls:
-            # Process in batches to avoid overwhelming the server
-            batch_size = 5
-            num_batches = (len(stage2_urls) + batch_size - 1) // batch_size
-            
-            for i in range(0, len(stage2_urls), batch_size):
-                # Check if scraping should stop
-                if stop_callback and stop_callback():
-                    print("Scraping stopped by user during Stage 2.")
-                    return all_cleaned_markdown
-                    
-                batch = stage2_urls[i:i+batch_size]
-                batch_num = i // batch_size + 1
-                print(f"Crawling Stage 2 batch {batch_num}/{num_batches}")
-                if status_callback:
-                    status_callback(f"Stage 2: Crawling batch {batch_num}/{num_batches}")
-                
-                # Process batch
-                batch_results = await process_batch(crawler, batch, visited_urls)
-                
-                # Extract sublinks from stage 2 pages for stage 3
-                for result in batch_results:
-                    all_cleaned_markdown.append(result["markdown"])
-                    
-                    # Extract links from both markdown and HTML content
-                    markdown_sublinks = re.findall(r'\((https?://[^\)]+)\)', result["markdown"])
-                    html_sublinks = extract_links_from_html(result["html"], base_url) if result["html"] else []
-                    
-                    # Process all found links
-                    for sublink in set(markdown_sublinks + html_sublinks):
-                        cleaned_sublink = clean_extracted_url(sublink, base_url)
-                        if cleaned_sublink and not should_skip_url(cleaned_sublink, visited_urls, base_url):
-                            stage3_urls.append(cleaned_sublink)
-                            visited_urls.add(cleaned_sublink)
-                
-                # Short delay between batches
-                await asyncio.sleep(0)
-
-        # Deduplicate and limit stage 3 URLs
-        stage3_urls = list(set(stage3_urls))
-        stage3_limit = min(len(stage3_urls), max_pages - len(all_cleaned_markdown))
-        stage3_urls = stage3_urls[:stage3_limit]
-        
-        # Stage 3: Crawl sublinks found in stage 2 pages
-        if stage3_urls:
-            num_batches = (len(stage3_urls) + batch_size - 1) // batch_size
-            print(f"\nFound {len(stage3_urls)} URLs to crawl in Stage 3")
-            if status_callback:
-                status_callback(f"Found {len(stage3_urls)} URLs to crawl in Stage 3")
-            
-            batch_size = 5
-            # Process in batches
-            for i in range(0, len(stage3_urls), batch_size):
-                # Check if scraping should stop
-                if stop_callback and stop_callback():
-                    print("Scraping stopped by user during Stage 3.")
-                    return all_cleaned_markdown
-                    
-                batch = stage3_urls[i:i+batch_size]
-                batch_num = i // batch_size + 1
-                print(f"Crawling Stage 3 batch {batch_num}/{num_batches}")
-                if status_callback:
-                    status_callback(f"Stage 3: Crawling batch {batch_num}/{num_batches}")
-                
-                # Process batch
-                batch_results = await process_batch(crawler, batch, visited_urls)
-                for result in batch_results:
-                    all_cleaned_markdown.append(result["markdown"])
-                
-                # Short delay between batches
-                await asyncio.sleep(0)
     
-    print(f"\nSuccessfully collected {len(all_cleaned_markdown)} pages")
-    if status_callback:
-        status_callback(f"Successfully collected {len(all_cleaned_markdown)} pages")
-    return all_cleaned_markdown
+    # Regular Browser-based scraping if fallback not needed
+    else:
+        base_url = inputurl
+        browser_conf = get_browser_config()
+        visited_urls = set()
+        all_cleaned_markdown = []
+        stage2_urls = []
+        stage3_urls = []
+        
+        # Check if scraping should stop
+        if stop_callback and stop_callback():
+            print("Scraping stopped by user.")
+            return all_cleaned_markdown
+            
+        async with AsyncWebCrawler(config=browser_conf) as crawler:
+            # Stage 1: Try sitemap first, then fall back to base page crawl
+            print(f"\nStarting crawl for: {base_url}")
+            if status_callback:
+                status_callback(f"Stage 1: Sitemap crawl for: {base_url}")
+            
+            # First attempt: Try to get URLs from sitemap
+            sitemap_urls = await extract_urls_from_sitemap(crawler, base_url)
+            
+            if sitemap_urls:
+                print(f"Successfully found {len(sitemap_urls)} URLs from sitemap")
+                if status_callback:
+                    status_callback(f"Found {len(sitemap_urls)} URLs from sitemap")
+                
+                # Use these URLs for stage 2
+                for url in sitemap_urls:
+                    cleaned_url = url  # We're keeping the original URLs from sitemap
+                    if cleaned_url and not should_skip_url(cleaned_url, visited_urls, base_url):
+                        stage2_urls.append(cleaned_url)
+                        visited_urls.add(cleaned_url)
+            else:
+                # Fallback: Crawl the base page if sitemap approach failed
+                print("No sitemap found or sitemap empty. Falling back to standard crawling.")
+                if status_callback:
+                    status_callback("No sitemap found. Using standard crawling approach.")
+                    
+                try:
+                    # Crawl the base URL
+                    result = await crawler.arun(url=base_url)
+                    if result:
+                        visited_urls.add(base_url)
+                        
+                        # Add the base page content to our collection
+                        if result.markdown:
+                            base_markdown = result.markdown
+                            all_cleaned_markdown.append(remove_sidebar(base_markdown))
+                        
+                        # Try extraction methods in sequence until we get URLs
+                        
+                        # 1. Try markdown extraction
+                        markdown_urls = set(re.findall(r'\((https?://[^\)]+)\)', result.markdown or ""))
+                        
+                        # 2. Try BeautifulSoup HTML parsing
+                        html_urls = set()
+                        if result.html:
+                            html_urls = set(extract_links_from_html(result.html, base_url))
+                        
+                        # 3. Try direct DOM access with JavaScript
+                        js_urls = set()
+                        js_urls = set(await direct_crawl_for_href(crawler, base_url))
+                        
+                        # 4. Try regex as fallback
+                        regex_urls = set()
+                        if result.html and not (markdown_urls or html_urls or js_urls):
+                            regex_urls = set(extract_href_attributes(result.html, base_url))
+                        
+                        # 5. Try common documentation paths as last resort
+                        common_urls = set()
+                        if not (markdown_urls or html_urls or js_urls or regex_urls):
+                            common_urls = set(generate_common_doc_paths(base_url))
+                        
+                        # Combine all found URLs
+                        all_urls = markdown_urls | html_urls | js_urls | regex_urls | common_urls
+                        
+                        # Clean and filter URLs
+                        for url in all_urls:
+                            cleaned_url = clean_extracted_url(url, base_url)
+                            if cleaned_url and not should_skip_url(cleaned_url, visited_urls, base_url):
+                                stage2_urls.append(cleaned_url)
+                                visited_urls.add(cleaned_url)
+                except Exception as e:
+                    print(f"Error in base page crawling: {str(e)}")
+                    if status_callback:
+                        status_callback(f"Error in base page crawling: {str(e)}")
+                    
+                    # If standard crawling failed, try common documentation paths
+                    print("Base page crawling failed. Trying common documentation paths...")
+                    common_urls = generate_common_doc_paths(base_url)
+                    stage2_urls.extend(common_urls)
+            
+            # Deduplicate URLs
+            stage2_urls = list(set(stage2_urls))
+            
+            # Limit number of pages for stage 2
+            stage2_limit = min(len(stage2_urls), max_pages // 2)
+            stage2_urls = stage2_urls[:stage2_limit]
+            print(f"Found {len(stage2_urls)} URLs to crawl in Stage 2")
+            if status_callback:
+                status_callback(f"Found {len(stage2_urls)} URLs to crawl in Stage 2")
+            
+            # Stage 2: Continue with the crawling as before
+            if stage2_urls:
+                # Process in batches to avoid overwhelming the server
+                batch_size = 5
+                num_batches = (len(stage2_urls) + batch_size - 1) // batch_size
+                
+                for i in range(0, len(stage2_urls), batch_size):
+                    # Check if scraping should stop
+                    if stop_callback and stop_callback():
+                        print("Scraping stopped by user during Stage 2.")
+                        return all_cleaned_markdown
+                        
+                    batch = stage2_urls[i:i+batch_size]
+                    batch_num = i // batch_size + 1
+                    print(f"Crawling Stage 2 batch {batch_num}/{num_batches}")
+                    if status_callback:
+                        status_callback(f"Stage 2: Crawling batch {batch_num}/{num_batches}")
+                    
+                    # Process batch
+                    batch_results = await process_batch(crawler, batch, visited_urls)
+                    
+                    # Extract sublinks from stage 2 pages for stage 3
+                    for result in batch_results:
+                        all_cleaned_markdown.append(result["markdown"])
+                        
+                        # Extract links from both markdown and HTML content
+                        markdown_sublinks = re.findall(r'\((https?://[^\)]+)\)', result["markdown"])
+                        html_sublinks = extract_links_from_html(result["html"], base_url) if result["html"] else []
+                        
+                        # Process all found links
+                        for sublink in set(markdown_sublinks + html_sublinks):
+                            cleaned_sublink = clean_extracted_url(sublink, base_url)
+                            if cleaned_sublink and not should_skip_url(cleaned_sublink, visited_urls, base_url):
+                                stage3_urls.append(cleaned_sublink)
+                                visited_urls.add(cleaned_sublink)
+                    
+                    # Short delay between batches
+                    await asyncio.sleep(0)
+
+            # Deduplicate and limit stage 3 URLs
+            stage3_urls = list(set(stage3_urls))
+            stage3_limit = min(len(stage3_urls), max_pages - len(all_cleaned_markdown))
+            stage3_urls = stage3_urls[:stage3_limit]
+            
+            # Stage 3: Crawl sublinks found in stage 2 pages
+            if stage3_urls:
+                num_batches = (len(stage3_urls) + batch_size - 1) // batch_size
+                print(f"\nFound {len(stage3_urls)} URLs to crawl in Stage 3")
+                if status_callback:
+                    status_callback(f"Found {len(stage3_urls)} URLs to crawl in Stage 3")
+                
+                batch_size = 5
+                # Process in batches
+                for i in range(0, len(stage3_urls), batch_size):
+                    # Check if scraping should stop
+                    if stop_callback and stop_callback():
+                        print("Scraping stopped by user during Stage 3.")
+                        return all_cleaned_markdown
+                        
+                    batch = stage3_urls[i:i+batch_size]
+                    batch_num = i // batch_size + 1
+                    print(f"Crawling Stage 3 batch {batch_num}/{num_batches}")
+                    if status_callback:
+                        status_callback(f"Stage 3: Crawling batch {batch_num}/{num_batches}")
+                
+                    # Process batch
+                    batch_results = await process_batch(crawler, batch, visited_urls)
+                    for result in batch_results:
+                        all_cleaned_markdown.append(result["markdown"])
+                
+                    # Short delay between batches
+                    await asyncio.sleep(0)
+        
+        print(f"\nSuccessfully collected {len(all_cleaned_markdown)} pages")
+        if status_callback:
+            status_callback(f"Successfully collected {len(all_cleaned_markdown)} pages")
+        return all_cleaned_markdown
+
+async def fallback_scrape_without_browser(url, status_callback=None):
+    """
+    A fallback method to scrape content without using a browser.
+    This is less effective but works when browser automation isn't available.
+    """
+    try:
+        import requests
+        from bs4 import BeautifulSoup
+        from urllib.parse import urljoin, urlparse
+        
+        if status_callback:
+            status_callback(f"Using fallback scraping method for {url}")
+        
+        # Parse the base URL
+        parsed_url = urlparse(url)
+        base_domain = f"{parsed_url.scheme}://{parsed_url.netloc}"
+        
+        # Make the request
+        response = requests.get(url)
+        soup = BeautifulSoup(response.text, 'html.parser')
+        
+        # Extract text and create markdown
+        title = soup.title.string if soup.title else "No Title"
+        main_content = soup.find('main') or soup.find('article') or soup.find('body')
+        
+        # Extract clean text
+        if main_content:
+            # Remove script and style elements
+            for script in main_content.find_all(['script', 'style']):
+                script.decompose()
+                
+            text = main_content.get_text(separator='\n\n')
+        else:
+            text = soup.get_text(separator='\n\n')
+            
+        # Clean up the text
+        lines = [line.strip() for line in text.split('\n') if line.strip()]
+        cleaned_text = '\n\n'.join(lines)
+        
+        # Create markdown
+        markdown = f"# {title}\n\n{cleaned_text}"
+        
+        # Try to extract links for further scraping
+        links = []
+        for a in soup.find_all('a', href=True):
+            href = a['href']
+            if href.startswith('/') or href.startswith(base_domain):
+                full_url = urljoin(base_domain, href)
+                links.append(full_url)
+                
+        if status_callback:
+            status_callback(f"Extracted {len(links)} links and {len(markdown)} characters of content")
+            
+        return markdown, links
+    except Exception as e:
+        if status_callback:
+            status_callback(f"Error in fallback scraping: {str(e)}")
+        return f"# Error scraping {url}\n\nError: {str(e)}", []
 
 if __name__ == "__main__":
     cleaned_pages = asyncio.run(get_all_cleaned_markdown())

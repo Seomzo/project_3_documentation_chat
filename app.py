@@ -4,6 +4,7 @@ import tempfile
 from dotenv import load_dotenv
 import warnings
 import sys
+from urllib.parse import urlparse
 
 # Import LangChain modules
 from langchain_huggingface import HuggingFaceEmbeddings
@@ -79,31 +80,40 @@ def run_async_scraper(url, max_pages, status_callback=None, stop_callback=None):
                     
                     # Try again with a more restrictive setup
                     if status_callback:
-                        status_callback("Attempting to install browser again with alternative approach...")
+                        status_callback("Attempting alternative approach with existing browser...")
                     
-                    # Install Firefox using a different approach
+                    # Try to work with existing browsers instead of installing new ones
                     try:
-                        import subprocess
-                        subprocess.run(["apt-get", "update", "-y"], check=False)
-                        subprocess.run(["apt-get", "install", "-y", "firefox-esr"], check=False)
-                        subprocess.run([sys.executable, "-m", "playwright", "install", "--with-deps", "firefox"], check=False)
+                        if status_callback:
+                            status_callback("Using non-browser fallback method...")
+                        
+                        # Create a simpler version of the URL for direct access
+                        parsed_url = urlparse(url)
+                        base_domain = f"{parsed_url.scheme}://{parsed_url.netloc}"
                         
                         if status_callback:
-                            status_callback("Browser reinstalled, retrying scraping...")
+                            status_callback(f"Attempting direct request to {base_domain}...")
                         
-                        # Try again with the new installation
-                        result = loop.run_until_complete(
-                            get_all_cleaned_markdown(
-                                inputurl=url,
-                                max_pages=max_pages,
-                                status_callback=status_callback,
-                                stop_callback=stop_callback
-                            )
-                        )
-                        return result
+                        # Try a more direct approach to get content
+                        import requests
+                        from bs4 import BeautifulSoup
+                        
+                        response = requests.get(url)
+                        soup = BeautifulSoup(response.text, 'html.parser')
+                        
+                        # Extract text content
+                        text_content = soup.get_text(separator="\n\n")
+                        
+                        # Create a minimal markdown version
+                        markdown_content = [f"# Content from {url}\n\n{text_content}"]
+                        
+                        if status_callback:
+                            status_callback("Retrieved basic content without browser...")
+                        
+                        return markdown_content
                     except Exception as inner_e:
                         if status_callback:
-                            status_callback(f"Failed retry: {str(inner_e)}")
+                            status_callback(f"Failed alternative approach: {str(inner_e)}")
                         raise inner_e
                 else:
                     # For other exceptions, just re-raise

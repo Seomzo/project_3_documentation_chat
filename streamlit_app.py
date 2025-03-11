@@ -15,13 +15,10 @@ st.set_page_config(
 try:
     # Check if running in Streamlit Cloud
     if os.environ.get('STREAMLIT_SHARING', '') or os.path.exists('/home/appuser'):
-        st.toast("Installing Playwright Firefox for Streamlit Cloud...")
-        # Run in a subprocess to avoid blocking the main thread
-        subprocess.run([sys.executable, "-m", "playwright", "install", "--with-deps", "firefox"], 
-                      check=True, capture_output=True)
-        st.toast("Playwright Firefox installed successfully.")
+        st.info("Running in Streamlit Cloud environment. Using fallback methods for web scraping if needed.")
+        # Don't attempt to install browsers here - that will be handled during scraping
 except Exception as e:
-    st.warning(f"⚠️ Playwright browser installation failed. Scraping might not work. Error: {str(e)}")
+    st.warning(f"Error during environment setup: {str(e)}")
 
 # Import core functionality
 from app import (
