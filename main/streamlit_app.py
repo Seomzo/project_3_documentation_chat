@@ -300,7 +300,7 @@ create_sidebar()
  # Exit application button
 if st.sidebar.button("Exit Application", type="primary"):
     st.error("Shutting down the application...")  # Display shutdown message
-    os._exit(0)  # Forcefully terminate the app
+    os._exit(0)  # Forcefully terminate the app 
 
 
 # URL Input section (only show if scraping not complete)
