@@ -293,7 +293,14 @@ def create_sidebar():
                 st.rerun()
     
     st.sidebar.caption("This application uses OpenAI's models to process and respond to your queries. Your API key is required to use this functionality.")
+    
+    # create a button to exit the application\
+    if st.sidebar.button("Exit Application", type="primary"):
+        st.error("Shutting down the application...")  # Display shutdown message
+        os._exit(0)  # Forcefully terminate the app
+    
 
+    
 # Call the create_sidebar function to generate the sidebar UI
 create_sidebar()
 
