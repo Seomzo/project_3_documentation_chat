@@ -297,6 +297,12 @@ def create_sidebar():
 # Call the create_sidebar function to generate the sidebar UI
 create_sidebar()
 
+ # Exit application button
+if st.sidebar.button("Exit Application", type="primary"):
+    st.error("Shutting down the application...")  # Display shutdown message
+    os._exit(0)  # Forcefully terminate the app
+
+
 # URL Input section (only show if scraping not complete)
 if not st.session_state.scraping_complete:
     # URL input with columns for buttons
@@ -332,6 +338,7 @@ if not st.session_state.scraping_complete:
     if st.session_state.scraping_in_progress and st.session_state.scraping_status:
         st.info(st.session_state.scraping_status)
 
+   
 # Chat interface (only show when scraping is complete)
 else:
     # Use the chat interface function from chat_manager
