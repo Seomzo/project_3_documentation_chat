@@ -315,11 +315,22 @@ if not st.session_state.scraping_complete:
     col1, col2 = st.columns([1, 1])
     
     with col1:
-        # Start scraping button (disabled if no API key or URL)
-        start_disabled = not (st.session_state.api_key and url_input)
-        if st.button("Start Scraping", disabled=start_disabled):
-            st.session_state.scraped_url = url_input
-            st.session_state.messages = []
+        # creare a start scraping button that is disabled if no API key or URL is entered but shows as enabled once both are entered
+        # Note: The button is disabled if no API key or URL is provided
+        st.session_state.api_key and url_input
+        if st.button("Start Scraping", disabled=not (st.session_state.api_key and url_input)):
+            # Start the scraping process in the background
+            if scrape_and_create_bot(url_input, st.session_state.max_pages):
+                st.rerun()
+
+
+
+
+        # # Start scraping button (disabled if no API key or URL)
+        # start_disabled = not (st.session_state.api_key and url_input)
+        # if st.button("Start Scraping", disabled=start_disabled):
+        #     st.session_state.scraped_url = url_input
+        #     st.session_state.messages = []
             
             # Start the scraping process in the background
             if scrape_and_create_bot(url_input, st.session_state.max_pages):
