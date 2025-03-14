@@ -162,6 +162,10 @@ After the initial scraping is complete, you can add content from additional URLs
 - **API key errors**: Verify your OpenAI API key is correct and has sufficient credits
 - **Import errors**: Ensure you're running the application from the main directory
 
+## Presentation
+
+[Documentation Chat Bot Presentation](https://www.canva.com/design/DAGhXyFcAGI/UVa5qjlqrAZDFtpdShTTOg/view?utm_content=DA[…]hare&utm_medium=link2&utm_source=uniquelinks&utlId=h212d24acff)
+
 ## Contributors
 
 - Omar Alsadoon
